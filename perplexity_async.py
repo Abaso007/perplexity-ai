@@ -17,18 +17,18 @@ def cookiejar_to_dict(cookie_jar):
 
     for x in cookie_jar._cookies.values():
         for y, z in dict(x).items():
-            new.update({y: z.value})
+            new[y] = z.value
 
     return new
 
 # utility function for case-sensitive header names, to convert lower case header names to upper case taken from curlconverter.com
 def case_fixer(headers):
-    new_headers = {}
-
-    for key, value in headers.items():
-        new_headers.update({'-'.join([word[0].upper() + word[1:] for word in key.split('-')]): value})
-    
-    return new_headers
+    return {
+        '-'.join(
+            [word[0].upper() + word[1:] for word in key.split('-')]
+        ): value
+        for key, value in headers.items()
+    }
 
 
 # https://dev.to/akarshan/asynchronous-python-magic-how-to-create-awaitable-constructors-with-asyncmixin-18j5
@@ -246,29 +246,29 @@ class Client(AsyncMixin):
                         'content_type': {'txt': 'text/plain', 'pdf': 'application/pdf'}[file[1]]
                     }
                 ]))
-    
+
                 # wait for response
                 while not self._last_file_upload_info:
                     await asyncio.sleep(0.01)
                 self.n += 1
-    
+
                 if not self._last_file_upload_info['success']:
                     raise Exception('File upload error', self._last_file_upload_info)
-    
+
                 # aiohttp's own multipart encoder
                 with aiohttp.MultipartWriter("form-data") as mp:
                     for field_name, field_value in self._last_file_upload_info['fields'].items():
                         part = mp.append(field_value)
                         part.set_content_disposition('form-data', name=field_name)
-    
+
                     part = mp.append(file[0], {'Content-Type': {'txt': 'text/plain', 'pdf': 'application/pdf'}[file[1]]})
                     part.set_content_disposition('form-data', name='file', filename=f'myfile{file_id}')
-    
+
                     upload_resp = await self.session.post(self._last_file_upload_info['url'], data=mp, headers={'Content-Type': mp.content_type})
-    
+
                 if not upload_resp.ok:
                     raise Exception('File upload error', upload_resp)
-    
+
                 uploaded_files.append(self._last_file_upload_info['url'] + self._last_file_upload_info['fields']['key'].replace('${filename}', f'myfile{file_id}'))
 
             # send search request with uploaded files as attachments
@@ -322,16 +322,12 @@ class Client(AsyncMixin):
             if self._last_answer['step_type'] == 'FINAL':
                 return self._last_answer
 
-            # if ai asking a question, use prompt solvers to answer
             elif self._last_answer['step_type'] == 'PROMPT_INPUT':
                 self.backend_uuid = self._last_answer['backend_uuid']
 
                 for step_query in self._last_answer['text'][-1]['content']['inputs']:
                     if step_query['type'] == 'PROMPT_TEXT':
-                        solver = solvers.get('text', None)
-
-                        # use solver to answer if solver function is defined
-                        if solver:
+                        if solver := solvers.get('text', None):
                             self.ws.send(f'{420 + self.n}' + json.dumps([
                                 'perplexity_step',
                                 query,
@@ -352,7 +348,6 @@ class Client(AsyncMixin):
                                 }
                             ]))
 
-                        # skip the question if solver function is not defined
                         else:
                             self.ws.send(f'{420 + self.n}' + json.dumps([
                                 'perplexity_step',
@@ -376,10 +371,7 @@ class Client(AsyncMixin):
 
 
                     if step_query['type'] == 'PROMPT_CHECKBOX':
-                        solver = solvers.get('checkbox', None)
-
-                        # use solver to answer if solver function is defined
-                        if solver:
+                        if solver := solvers.get('checkbox', None):
                             solver_answer = await solver(step_query['content']['description'], {int(x['id']): x['value'] for x in step_query['content']['options']})
 
                             self.ws.send(f'{420 + self.n}' + json.dumps([
@@ -402,7 +394,6 @@ class Client(AsyncMixin):
                                 }
                             ]))
 
-                        # skip the question if solver function is not defined
                         else:
                             self.ws.send(f'{420 + self.n}' + json.dumps([
                                 'perplexity_step',
