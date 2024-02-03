@@ -13,12 +13,12 @@ signin_regex = re.compile(r'"(https://www\.perplexity\.ai/api/auth/callback/emai
 
 # utility function for case-sensitive header names, to convert lower case header names to upper case taken from curlconverter.com
 def case_fixer(headers):
-    new_headers = {}
-
-    for key, value in headers.items():
-        new_headers.update({'-'.join([word[0].upper() + word[1:] for word in key.split('-')]): value})
-    
-    return new_headers
+    return {
+        '-'.join(
+            [word[0].upper() + word[1:] for word in key.split('-')]
+        ): value
+        for key, value in headers.items()
+    }
 
 
 # client class for emailnator
@@ -48,8 +48,13 @@ class Emailnator:
         self.email = self.s.post('https://www.emailnator.com/generate-email', json=data).json()['email'][0]
 
         # append advertisements to inbox_ads
-        for ads in self.s.post('https://www.emailnator.com/message-list', json={'email': self.email}).json()['messageData']:
-            self.inbox_ads.append(ads['messageID'])
+        self.inbox_ads.extend(
+            ads['messageID']
+            for ads in self.s.post(
+                'https://www.emailnator.com/message-list',
+                json={'email': self.email},
+            ).json()['messageData']
+        )
 
     # reload inbox messages
     def reload(self, wait=False, retry_timeout=1, max_retry=10):
@@ -57,10 +62,14 @@ class Emailnator:
         retry_count = 0
 
         while True:
-            for msg in self.s.post('https://www.emailnator.com/message-list', json={'email': self.email}).json()['messageData']:
-                if msg['messageID'] not in self.inbox_ads and msg not in self.inbox:
-                    self.new_msgs.append(msg)
-
+            self.new_msgs.extend(
+                msg
+                for msg in self.s.post(
+                    'https://www.emailnator.com/message-list',
+                    json={'email': self.email},
+                ).json()['messageData']
+                if msg['messageID'] not in self.inbox_ads and msg not in self.inbox
+            )
             retry_count += 1
 
             if wait and retry_count < max_retry and not self.new_msgs:
@@ -307,16 +316,12 @@ class Client:
             if self._last_answer['step_type'] == 'FINAL':
                 return self._last_answer
 
-            # if ai asking a question, use prompt solvers to answer
             elif self._last_answer['step_type'] == 'PROMPT_INPUT':
                 self.backend_uuid = self._last_answer['backend_uuid']
 
                 for step_query in self._last_answer['text'][-1]['content']['inputs']:
                     if step_query['type'] == 'PROMPT_TEXT':
-                        solver = solvers.get('text', None)
-
-                        # use solver to answer if solver function is defined
-                        if solver:
+                        if solver := solvers.get('text', None):
                             self.ws.send(f'{420 + self.n}' + json.dumps([
                                 'perplexity_step',
                                 query,
@@ -337,7 +342,6 @@ class Client:
                                 }
                             ]))
 
-                        # skip the question if solver function is not defined
                         else:
                             self.ws.send(f'{420 + self.n}' + json.dumps([
                                 'perplexity_step',
@@ -361,10 +365,7 @@ class Client:
 
 
                     if step_query['type'] == 'PROMPT_CHECKBOX':
-                        solver = solvers.get('checkbox', None)
-
-                        # use solver to answer if solver function is defined
-                        if solver:
+                        if solver := solvers.get('checkbox', None):
                             solver_answer = solver(step_query['content']['description'], {int(x['id']): x['value'] for x in step_query['content']['options']})
 
                             self.ws.send(f'{420 + self.n}' + json.dumps([
@@ -387,7 +388,6 @@ class Client:
                                 }
                             ]))
 
-                        # skip the question if solver function is not defined
                         else:
                             self.ws.send(f'{420 + self.n}' + json.dumps([
                                 'perplexity_step',
@@ -518,8 +518,12 @@ class Pool:
         while True:
             # if copilot or file upload count is lower than self.copilots and self.file_uploads, create new account. Accounts that doesn't have copilot and file upload at the same time will be excluded becuase of calculation errors
             # let's say self.copilots is 3 and self.file_uploads is 3, and there are 2 accounts at self.accounts right now, first one has 3 copilots but 0 file uploads and second one has 3 file uploads but 0 copilots, what will happen when you use ask() function in copilot mode with file upload
-            current_copilots = sum([x.copilot for x in self.accounts if x.copilot and x.file_upload])
-            current_file_uploads = sum([x.file_upload for x in self.accounts if x.copilot and x.file_upload])
+            current_copilots = sum(
+                x.copilot for x in self.accounts if x.copilot and x.file_upload
+            )
+            current_file_uploads = sum(
+                x.file_upload for x in self.accounts if x.copilot and x.file_upload
+            )
 
             if not self.accounts or current_copilots < self.copilots or current_file_uploads < self.file_uploads:
                 new_account = Client(perplexity_headers, perplexity_cookies)
@@ -530,8 +534,16 @@ class Pool:
                 # remove accounts that doesn't has copilot and file upload at the same time if the count of copilot or file upload not going to be less than self.copilots / 2
                 # so the codes below acts like garbage, but it will retain accounts that has copilot or file upload for only copilot & file upload queries. I made it like this to not waste the accounts created and reduce the account creation amount
                 for account in list(self.accounts):
-                    current_copilots = sum([x.copilot for x in self.accounts if x.copilot and x.file_upload])
-                    current_file_uploads = sum([x.file_upload for x in self.accounts if x.copilot and x.file_upload])
+                    current_copilots = sum(
+                        x.copilot
+                        for x in self.accounts
+                        if x.copilot and x.file_upload
+                    )
+                    current_file_uploads = sum(
+                        x.file_upload
+                        for x in self.accounts
+                        if x.copilot and x.file_upload
+                    )
 
                     if (account.copilot == 0 or account.file_upload == 0) and (current_copilots - account.copilot >= self.copilots / 2 or current_file_uploads - account.file_upload >= self.file_uploads / 2):
                         self.accounts.remove(account)
